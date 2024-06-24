@@ -1,37 +1,22 @@
 import streamlit as st
-import replicate
-import os
+from transformers import pipeline
 
 # App title
-st.set_page_config(page_title="Llama 2 Chatbot")
+st.set_page_config(page_title="Chatbot with Hugging Face Model")
 
-# Replicate Credentials
+# Model selection from Hugging Face Hub
 with st.sidebar:
-    st.title('Llama 2 Finetuned Chatbot')
-    if 'REPLICATE_API_TOKEN' in st.secrets:
-        st.success('API key already provided!')
-        replicate_api = st.secrets['REPLICATE_API_TOKEN']
-    else:
-        replicate_api = st.text_input('Enter Replicate API token:', type='password')
-        if not (replicate_api.startswith('r8_') and len(replicate_api)==40):
-            st.warning('Please enter your credentials!')
-        else:
-            st.success('Welcome!')
-    os.environ['REPLICATE_API_TOKEN'] = replicate_api
-
-    st.subheader('Models and parameters')
-    selected_model = st.sidebar.selectbox('Choose a Llama2 model', ['Llama2-7B'], key='selected_model')
-    if selected_model == 'Llama2-7B':
-        llm = 'a16z-infra/llama7b-v2-chat:4f0a4744c7295c024a1de15e1a63c880d3da035fa1f49bfd344fe076074c8eea'
-    elif selected_model == 'Llama2-13B':
-        llm = 'a16z-infra/llama13b-v2-chat:df7690f1994d94e96ad9d568eac121aecf50684a0b0963b25a41cc40061269e5'
+    st.title('Chatbot with Hugging Face Model')
+    model_name = st.selectbox('Choose a model:', ['oumaima12/Llama-2-7b-chat-finetune6'], key='selected_model')
+    loaded_model = pipeline(task="conversational", model=model_name)  # Adjust task as needed
+    st.subheader('Conversation Parameters')
     temperature = st.sidebar.slider('temperature', min_value=0.01, max_value=1.0, value=0.1, step=0.01)
     top_p = st.sidebar.slider('top_p', min_value=0.01, max_value=1.0, value=0.9, step=0.01)
     max_length = st.sidebar.slider('max_length', min_value=32, max_value=128, value=120, step=8)
 
-# Store LLM generated responses
+# Store conversation history
 if "messages" not in st.session_state.keys():
-    st.session_state.messages = [{"role": "assistant", "content": "Hi! how can i help you?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Hi! How can I help you?"}]
 
 # Display or clear chat messages
 for message in st.session_state.messages:
@@ -39,24 +24,22 @@ for message in st.session_state.messages:
         st.write(message["content"])
 
 def clear_chat_history():
-    st.session_state.messages = [{"role": "assistant", "content": "Hi! how can i help you?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Hi! How can I help you?"}]
 st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
-# Function for generating LLaMA2 response
-def generate_llama2_response(prompt_input):
+# Function for generating response
+def generate_response(prompt_input):
     string_dialogue = "You are a helpful assistant. You do not respond as 'User' or pretend to be 'User'. You only respond once as 'Assistant'."
     for dict_message in st.session_state.messages:
         if dict_message["role"] == "user":
             string_dialogue += "User: " + dict_message["content"] + "\n\n"
         else:
             string_dialogue += "Assistant: " + dict_message["content"] + "\n\n"
-    output = replicate.run('a16z-infra/llama13b-v2-chat:df7690f1994d94e96ad9d568eac121aecf50684a0b0963b25a41cc40061269e5', 
-                           input={"prompt": f"{string_dialogue} {prompt_input} Assistant: ",
-                                  "temperature":temperature, "top_p":top_p, "max_length":max_length, "repetition_penalty":1})
-    return output
+    response = loaded_model(inputs=prompt_input, max_length=max_length, num_beams=1, temperature=temperature, top_p=top_p)[0]['generated_text']
+    return response
 
 # User-provided prompt
-if prompt := st.chat_input(disabled=not replicate_api):
+if prompt := st.chat_input(placeholder="Type your message here..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.write(prompt)
@@ -64,12 +47,7 @@ if prompt := st.chat_input(disabled=not replicate_api):
 # Generate a new response if last message is not from assistant
 if st.session_state.messages[-1]["role"] != "assistant":
     with st.chat_message("assistant"):
-        response = generate_llama2_response(prompt)
-        placeholder = st.empty()
-        full_response = ''
-        for item in response:
-            full_response += item
-            placeholder.markdown(full_response)
-        placeholder.markdown(full_response)
-    message = {"role": "assistant", "content": full_response}
+        response = generate_response(prompt)
+        st.write(response)
+    message = {"role": "assistant", "content": response}
     st.session_state.messages.append(message)
